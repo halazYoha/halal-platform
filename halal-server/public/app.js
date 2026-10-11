@@ -734,7 +734,14 @@ function renderWithdrawalPage() {
   `;
 }
 
-// 7. RECORDS VIEW (Deposit / Withdrawal History)
+let currentRecordsFilter = 'all';
+
+function goToRecords(filter = 'all') {
+  currentRecordsFilter = filter;
+  state.currentTab = 'records';
+  render();
+}
+
 async function renderRecordsPage(container) {
   container.innerHTML = `
     <div class="p-4 flex items-center justify-center min-h-[50vh]">
@@ -751,68 +758,66 @@ async function renderRecordsPage(container) {
           <button onclick="switchTab('mine')" class="p-1 text-gray-400 hover:text-white">
             <i data-lucide="chevron-left" class="w-6 h-6"></i>
           </button>
-          <h2 class="text-sm font-bold text-white">Financial Records</h2>
+          <h2 class="text-sm font-bold text-white">Financial Details & History</h2>
           <div class="w-6"></div>
         </div>
 
-        <!-- DEPOSITS -->
-        <div class="space-y-2">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400">Payment Deposits</h3>
-          ${deposits.length === 0 ? `<div class="bg-[#171922] p-4 text-center text-xs text-gray-500 rounded-xl">No deposits yet</div>` : deposits.map(d => `
-            <div class="bg-[#171922] border border-[#262a39] p-3 rounded-xl flex justify-between items-center">
-              <div>
-                <div class="font-bold text-white text-xs">${d.provider} - Ref: ${d.transaction_id}</div>
-                <div class="text-[10px] text-gray-400">${new Date(d.created_at).toLocaleString()}</div>
-              </div>
-              <div class="text-right">
-                <div class="font-bold text-[#00C853] text-sm">+ETB ${d.amount.toLocaleString()}</div>
-                <span class="text-[10px] font-bold px-2 py-0.5 rounded ${d.status === 'approved' ? 'bg-emerald-500/10 text-[#00C853]' : 'bg-yellow-500/10 text-yellow-400'}">${d.status.toUpperCase()}</span>
-              </div>
-            </div>
-          `).join('')}
+        <!-- FILTER TABS -->
+        <div class="flex bg-[#161822] p-1 rounded-xl border border-[#262a38] text-xs font-bold">
+          <button onclick="goToRecords('all')" class="flex-1 py-1.5 rounded-lg transition ${currentRecordsFilter === 'all' ? 'bg-[#00C853] text-black shadow' : 'text-gray-400 hover:text-white'}">
+            All Records
+          </button>
+          <button onclick="goToRecords('deposit')" class="flex-1 py-1.5 rounded-lg transition ${currentRecordsFilter === 'deposit' ? 'bg-[#00C853] text-black shadow' : 'text-gray-400 hover:text-white'}">
+            Payments
+          </button>
+          <button onclick="goToRecords('withdrawal')" class="flex-1 py-1.5 rounded-lg transition ${currentRecordsFilter === 'withdrawal' ? 'bg-[#00C853] text-black shadow' : 'text-gray-400 hover:text-white'}">
+            Withdrawals
+          </button>
         </div>
 
+        <!-- DEPOSITS -->
+        ${(currentRecordsFilter === 'all' || currentRecordsFilter === 'deposit') ? `
+          <div class="space-y-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400">Payment Deposits</h3>
+            ${deposits.length === 0 ? `<div class="bg-[#171922] p-4 text-center text-xs text-gray-500 rounded-xl">No deposits yet</div>` : deposits.map(d => `
+              <div class="bg-[#171922] border border-[#262a39] p-3 rounded-xl flex justify-between items-center">
+                <div>
+                  <div class="font-bold text-white text-xs">${d.provider} - Ref: ${d.transaction_id}</div>
+                  <div class="text-[10px] text-gray-400">${new Date(d.created_at).toLocaleString()}</div>
+                </div>
+                <div class="text-right">
+                  <div class="font-bold text-[#00C853] text-sm">+ETB ${d.amount.toLocaleString()}</div>
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded ${d.status === 'approved' ? 'bg-emerald-500/10 text-[#00C853]' : 'bg-yellow-500/10 text-yellow-400'}">${d.status.toUpperCase()}</span>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
         <!-- WITHDRAWALS -->
-        <div class="space-y-2 pt-2">
-          <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400">Cash Withdrawals</h3>
-          ${withdrawals.length === 0 ? `<div class="bg-[#171922] p-4 text-center text-xs text-gray-500 rounded-xl">No withdrawals yet</div>` : withdrawals.map(w => `
-            <div class="bg-[#171922] border border-[#262a39] p-3 rounded-xl flex justify-between items-center">
-              <div>
-                <div class="font-bold text-white text-xs">${w.channel} to ${w.account_number}</div>
-                <div class="text-[10px] text-gray-400">${new Date(w.created_at).toLocaleString()}</div>
+        ${(currentRecordsFilter === 'all' || currentRecordsFilter === 'withdrawal') ? `
+          <div class="space-y-2 pt-2">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400">Cash Withdrawals</h3>
+            ${withdrawals.length === 0 ? `<div class="bg-[#171922] p-4 text-center text-xs text-gray-500 rounded-xl">No withdrawals yet</div>` : withdrawals.map(w => `
+              <div class="bg-[#171922] border border-[#262a39] p-3 rounded-xl flex justify-between items-center">
+                <div>
+                  <div class="font-bold text-white text-xs">${w.channel} to ${w.account_number}</div>
+                  <div class="text-[10px] text-gray-400">${new Date(w.created_at).toLocaleString()}</div>
+                </div>
+                <div class="text-right">
+                  <div class="font-bold text-red-400 text-sm">-ETB ${w.amount.toLocaleString()}</div>
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded ${w.status === 'approved' ? 'bg-emerald-500/10 text-[#00C853]' : 'bg-yellow-500/10 text-yellow-400'}">${w.status.toUpperCase()}</span>
+                </div>
               </div>
-              <div class="text-right">
-                <div class="font-bold text-red-400 text-sm">-ETB ${w.amount.toLocaleString()}</div>
-                <span class="text-[10px] font-bold px-2 py-0.5 rounded ${w.status === 'approved' ? 'bg-emerald-500/10 text-[#00C853]' : 'bg-yellow-500/10 text-yellow-400'}">${w.status.toUpperCase()}</span>
-              </div>
-            </div>
-          `).join('')}
-        </div>
+            `).join('')}
+          </div>
+        ` : ''}
       </div>
     `;
     lucide.createIcons();
   } catch (e) {
     container.innerHTML = `<div class="p-6 text-center text-red-400 text-xs">${e.message}</div>`;
   }
-}
-
-// ==========================================
-// ACTIONS & HANDLERS
-// ==========================================
-
-function goToPayment() {
-  state.currentTab = 'payment';
-  render();
-}
-
-function goToWithdrawal() {
-  state.currentTab = 'withdrawal';
-  render();
-}
-
-function goToRecords() {
-  state.currentTab = 'records';
-  render();
 }
 
 function setDepositAmount(amt) {
@@ -1026,18 +1031,38 @@ async function claimIncome() {
   } catch (e) {}
 }
 
-// Edit Withdrawal details
+// Edit Withdrawal details with sleek modal
 function editWithdrawalAccount() {
-  const acc = prompt('Enter your default Telebirr phone number or CBE account for payouts:', state.user?.telebirr_account || state.user?.phone || '');
-  if (acc) {
-    api('/user/payment-accounts', {
-      method: 'POST',
-      body: JSON.stringify({ telebirr_account: acc })
-    }).then(() => {
-      showToast('Payout account saved!', 'success');
-      state.user.telebirr_account = acc;
-    });
+  showAppModal('Withdrawal Account Settings', `
+    <div class="space-y-3">
+      <div>
+        <label class="text-[11px] font-bold text-gray-400">Telebirr Payout Phone</label>
+        <input type="text" id="modal-telebirr-input" value="${state.user?.telebirr_account || state.user?.phone || ''}" placeholder="09XXXXXXXX" class="w-full bg-[#101218] border border-[#252838] rounded-xl px-3 py-2 text-xs text-white outline-none">
+      </div>
+      <div>
+        <label class="text-[11px] font-bold text-gray-400">CBE Bank Account Number</label>
+        <input type="text" id="modal-cbe-input" value="${state.user?.bank_account || ''}" placeholder="1000XXXXXXXX" class="w-full bg-[#101218] border border-[#252838] rounded-xl px-3 py-2 text-xs text-white outline-none">
+      </div>
+      <button onclick="saveWithdrawalAccountDetails()" class="w-full py-2.5 bg-[#00C853] text-black font-extrabold text-xs rounded-xl shadow-md">
+        Save Payout Account
+      </button>
+    </div>
+  `);
+}
+
+async function saveWithdrawalAccountDetails() {
+  const telebirr = document.getElementById('modal-telebirr-input').value.trim();
+  const cbe = document.getElementById('modal-cbe-input').value.trim();
+  await api('/user/payment-accounts', {
+    method: 'POST',
+    body: JSON.stringify({ telebirr_account: telebirr, bank_account: cbe })
+  });
+  if (state.user) {
+    state.user.telebirr_account = telebirr;
+    state.user.bank_account = cbe;
   }
+  closeAppModal();
+  showToast('Payout details saved!', 'success');
 }
 
 function copyText(str, successMsg = 'Copied to clipboard!') {
@@ -1049,7 +1074,86 @@ function copyText(str, successMsg = 'Copied to clipboard!') {
 }
 
 function showCustomerService() {
-  alert('Halal Customer Service:\n• Telegram: @HalalEthioSupport\n• Hotline: +251 938 236 272\n• Hours: 08:30 - 21:00 Daily');
+  showAppModal('Halal Customer Support', `
+    <div class="space-y-3 text-xs text-gray-300">
+      <div class="flex items-center space-x-3 bg-[#111319] p-3 rounded-xl border border-[#232736]">
+        <i data-lucide="send" class="w-5 h-5 text-[#00C853]"></i>
+        <div>
+          <div class="font-bold text-white">Telegram Support</div>
+          <div class="text-emerald-400 font-mono">@HalalEthioSupport</div>
+        </div>
+      </div>
+      <div class="flex items-center space-x-3 bg-[#111319] p-3 rounded-xl border border-[#232736]">
+        <i data-lucide="phone-call" class="w-5 h-5 text-yellow-400"></i>
+        <div>
+          <div class="font-bold text-white">Direct Hotline</div>
+          <div class="font-mono text-gray-200">+251 938 236 272</div>
+        </div>
+      </div>
+      <div class="text-[11px] text-gray-400 text-center pt-1">
+        Official Support Hours: 08:30 - 21:00 (Mon - Sun)
+      </div>
+    </div>
+  `);
+}
+
+function showAboutUs() {
+  showAppModal('About HALAL Platform', `
+    <div class="space-y-3 text-xs text-gray-300 leading-relaxed">
+      <p><strong class="text-white">HALAL Ethical Fabrication</strong> operates regional 3D manufacturing hubs in Ethiopia, producing high-demand replacement parts, medical casts, and specialized industrial components.</p>
+      <p>Users lease certified digital hardware units and receive daily halal yield generated from real additive manufacturing operations.</p>
+      <div class="bg-emerald-950/40 border border-emerald-500/30 p-2.5 rounded-xl text-[11px] text-emerald-300">
+        ✓ 100% Asset-backed hardware leases.<br>
+        ✓ Strictly zero interest (Riba-free) profit model.
+      </div>
+    </div>
+  `);
+}
+
+function showRules() {
+  showAppModal('Platform Rules & Guidelines', `
+    <div class="space-y-2.5 text-xs text-gray-300 leading-relaxed">
+      <div class="bg-[#111319] p-2.5 rounded-xl border border-[#232635]">
+        <span class="text-[#00C853] font-bold">1. Daily Profit Accrual:</span>
+        <p class="text-[11px] text-gray-400">Earnings generate every 24 hours and can be claimed directly from the 'My Product' tab.</p>
+      </div>
+      <div class="bg-[#111319] p-2.5 rounded-xl border border-[#232635]">
+        <span class="text-[#00C853] font-bold">2. Payout Processing:</span>
+        <p class="text-[11px] text-gray-400">Withdrawal requests to Telebirr or CBE are reviewed and dispatched within 15–30 minutes.</p>
+      </div>
+      <div class="bg-[#111319] p-2.5 rounded-xl border border-[#232635]">
+        <span class="text-[#00C853] font-bold">3. 3-Tier Referral Commissions:</span>
+        <p class="text-[11px] text-gray-400">Level 1 (35%), Level 2 (3%), Level 3 (2%) bonuses are credited immediately upon downline investment.</p>
+      </div>
+    </div>
+  `);
+}
+
+function showAppModal(title, htmlContent) {
+  let modal = document.getElementById('general-app-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'general-app-modal';
+    document.body.appendChild(modal);
+  }
+  modal.className = 'fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4';
+  modal.innerHTML = `
+    <div class="bg-[#151722] border border-[#2b3044] rounded-3xl p-5 w-full max-w-sm space-y-3.5 shadow-2xl relative">
+      <div class="flex items-center justify-between pb-2 border-b border-[#232736]">
+        <h3 class="text-sm font-bold text-white">${title}</h3>
+        <button onclick="closeAppModal()" class="text-gray-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      ${htmlContent}
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+function closeAppModal() {
+  const modal = document.getElementById('general-app-modal');
+  if (modal) modal.remove();
 }
 
 // Banner Content Slides showing the company's work
