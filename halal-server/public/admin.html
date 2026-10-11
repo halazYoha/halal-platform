@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HALAL - Admin Management Control Panel</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #0b0d11; color: #e5e7eb; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- TOP HEADER -->
+  <header class="bg-[#12151e] border-b border-[#212636] px-6 py-4 flex items-center justify-between sticky top-0 z-30">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#00C853] to-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 text-black font-extrabold text-xl">H</div>
+      <div>
+        <h1 class="text-base font-extrabold text-white tracking-wide">HALAL Admin Control Panel</h1>
+        <p class="text-[11px] text-gray-400">Payment Verification, Payouts & VIP Management</p>
+      </div>
+    </div>
+
+    <div class="flex items-center space-x-4">
+      <a href="/" target="_blank" class="px-3.5 py-1.5 bg-[#1e2333] hover:bg-[#282f45] text-xs font-bold text-[#00C853] rounded-lg border border-emerald-500/20 flex items-center space-x-1.5">
+        <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+        <span>Open User App</span>
+      </a>
+      <button onclick="logoutAdmin()" class="text-xs text-gray-400 hover:text-red-400 font-medium">Logout</button>
+    </div>
+  </header>
+
+  <!-- ADMIN BODY -->
+  <div class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
+
+    <!-- OVERVIEW STATS -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4" id="stats-grid">
+      <div class="bg-[#131620] border border-[#23283a] p-4 rounded-2xl shadow-lg">
+        <div class="text-xs text-gray-400 font-medium">Total Registered Users</div>
+        <div class="text-2xl font-black text-white mt-1" id="stat-users">-</div>
+      </div>
+      <div class="bg-[#131620] border border-[#23283a] p-4 rounded-2xl shadow-lg">
+        <div class="text-xs text-gray-400 font-medium">Total Approved Deposits</div>
+        <div class="text-2xl font-black text-[#00C853] mt-1" id="stat-deposits">-</div>
+      </div>
+      <div class="bg-[#131620] border border-[#23283a] p-4 rounded-2xl shadow-lg">
+        <div class="text-xs text-gray-400 font-medium">Total Approved Withdrawals</div>
+        <div class="text-2xl font-black text-yellow-400 mt-1" id="stat-withdrawals">-</div>
+      </div>
+      <div class="bg-[#131620] border border-[#23283a] p-4 rounded-2xl shadow-lg">
+        <div class="text-xs text-gray-400 font-medium">Active Leased Equipment</div>
+        <div class="text-2xl font-black text-blue-400 mt-1" id="stat-orders">-</div>
+      </div>
+    </div>
+
+    <!-- TABS -->
+    <div class="flex space-x-2 border-b border-[#23283a] pb-2">
+      <button onclick="setAdminTab('deposits')" id="tab-deposits" class="px-4 py-2 text-xs font-bold rounded-lg bg-[#00C853] text-black">
+        Deposits & SMS Verification
+      </button>
+      <button onclick="setAdminTab('withdrawals')" id="tab-withdrawals" class="px-4 py-2 text-xs font-bold rounded-lg bg-[#181c29] text-gray-300 hover:text-white">
+        Withdrawal Payout Requests
+      </button>
+      <button onclick="setAdminTab('users')" id="tab-users" class="px-4 py-2 text-xs font-bold rounded-lg bg-[#181c29] text-gray-300 hover:text-white">
+        User Accounts & Balances
+      </button>
+    </div>
+
+    <!-- SECTION CONTENT -->
+    <div id="admin-content" class="bg-[#131620] border border-[#23283a] rounded-2xl p-5 shadow-xl"></div>
+  </div>
+
+  <script>
+    let adminToken = localStorage.getItem('halal_admin_token') || null;
+    let currentAdminTab = 'deposits';
+
+    async function adminApi(path, options = {}) {
+      const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+      if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+      const res = await fetch(`/api/admin${path}`, { ...options, headers });
+      if (res.status === 401 || res.status === 403) {
+        // Auto-login default admin for testing
+        await autoLoginAdmin();
+        headers['Authorization'] = `Bearer ${adminToken}`;
+        const retry = await fetch(`/api/admin${path}`, { ...options, headers });
+        return retry.json();
+      }
+      return res.json();
+    }
+
+    async function autoLoginAdmin() {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: 'admin', password: 'admin123' })
+      });
+      const data = await res.json();
+      if (data.token) {
+        adminToken = data.token;
+        localStorage.setItem('halal_admin_token', adminToken);
+      }
+    }
+
+    async function loadOverview() {
+      const stats = await adminApi('/overview');
+      document.getElementById('stat-users').innerText = stats.totalUsers || 0;
+      document.getElementById('stat-deposits').innerText = 'ETB ' + (stats.totalDeposits || 0).toLocaleString();
+      document.getElementById('stat-withdrawals').innerText = 'ETB ' + (stats.totalWithdrawals || 0).toLocaleString();
+      document.getElementById('stat-orders').innerText = stats.activeOrders || 0;
+    }
+
+    function setAdminTab(tab) {
+      currentAdminTab = tab;
+      ['deposits', 'withdrawals', 'users'].forEach(t => {
+        const btn = document.getElementById(`tab-${t}`);
+        if (t === tab) {
+          btn.className = 'px-4 py-2 text-xs font-bold rounded-lg bg-[#00C853] text-black';
+        } else {
+          btn.className = 'px-4 py-2 text-xs font-bold rounded-lg bg-[#181c29] text-gray-300 hover:text-white';
+        }
+      });
+      renderAdminContent();
+    }
+
+    async function renderAdminContent() {
+      const box = document.getElementById('admin-content');
+      box.innerHTML = '<div class="py-12 text-center text-xs text-gray-400">Loading data...</div>';
+
+      if (currentAdminTab === 'deposits') {
+        const deposits = await adminApi('/deposits');
+        box.innerHTML = `
+          <div class="space-y-4">
+            <div class="flex justify-between items-center">
+              <h2 class="text-sm font-bold text-white">Deposit Requests & Pasted SMS Logs</h2>
+              <button onclick="renderAdminContent()" class="text-xs text-[#00C853] hover:underline">Refresh</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="border-b border-[#23283a] text-gray-400">
+                    <th class="py-2.5">User Phone</th>
+                    <th>Channel</th>
+                    <th>Transaction ID</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Pasted Message Content</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2333]">
+                  ${deposits.map(d => `
+                    <tr>
+                      <td class="py-3 font-bold text-white">${d.user_phone}</td>
+                      <td><span class="px-2 py-0.5 rounded font-mono text-[10px] bg-emerald-500/10 text-emerald-400 font-bold">${d.provider}</span></td>
+                      <td class="font-mono text-[#00C853] font-bold">${d.transaction_id}</td>
+                      <td class="font-bold text-white">ETB ${d.amount.toLocaleString()}</td>
+                      <td>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${d.status === 'approved' ? 'bg-emerald-500/10 text-[#00C853]' : 'bg-yellow-500/10 text-yellow-400'}">
+                          ${d.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td class="max-w-xs truncate text-gray-400 font-mono text-[11px]" title="${d.raw_message || ''}">
+                        ${d.raw_message || '-'}
+                      </td>
+                      <td>
+                        ${d.status === 'pending' ? `
+                          <div class="flex space-x-1">
+                            <button onclick="handleDepositAction(${d.id}, 'approve')" class="px-2.5 py-1 bg-[#00C853] text-black font-bold rounded text-[11px]">Approve</button>
+                            <button onclick="handleDepositAction(${d.id}, 'reject')" class="px-2.5 py-1 bg-red-600 text-white font-bold rounded text-[11px]">Reject</button>
+                          </div>
+                        ` : '<span class="text-gray-500 text-[11px]">Completed</span>'}
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      } else if (currentAdminTab === 'withdrawals') {
+        const withdrawals = await adminApi('/withdrawals');
+        box.innerHTML = `
+          <div class="space-y-4">
+            <div class="flex justify-between items-center">
+              <h2 class="text-sm font-bold text-white">Withdrawal Cashout Requests</h2>
+              <button onclick="renderAdminContent()" class="text-xs text-[#00C853] hover:underline">Refresh</button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="border-b border-[#23283a] text-gray-400">
+                    <th class="py-2.5">User Phone</th>
+                    <th>Method</th>
+                    <th>Account / Phone</th>
+                    <th>Account Name</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2333]">
+                  ${withdrawals.map(w => `
+                    <tr>
+                      <td class="py-3 font-bold text-white">${w.user_phone}</td>
+                      <td><span class="px-2 py-0.5 rounded font-mono text-[10px] bg-blue-500/10 text-blue-400 font-bold">${w.channel}</span></td>
+                      <td class="font-mono text-white font-bold select-all">${w.account_number}</td>
+                      <td class="text-gray-300">${w.account_name || '-'}</td>
+                      <td class="font-bold text-yellow-400">ETB ${w.amount.toLocaleString()}</td>
+                      <td>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold ${w.status === 'approved' ? 'bg-emerald-500/10 text-[#00C853]' : w.status === 'pending' ? 'bg-yellow-500/10 text-yellow-400' : 'bg-red-500/10 text-red-400'}">
+                          ${w.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td>
+                        ${w.status === 'pending' ? `
+                          <div class="flex space-x-1">
+                            <button onclick="handleWithdrawAction(${w.id}, 'approve')" class="px-2.5 py-1 bg-[#00C853] text-black font-bold rounded text-[11px]">Mark Paid</button>
+                            <button onclick="handleWithdrawAction(${w.id}, 'reject')" class="px-2.5 py-1 bg-red-600 text-white font-bold rounded text-[11px]">Reject</button>
+                          </div>
+                        ` : `<span class="text-gray-500 text-[11px] font-mono">${w.admin_tx_id || 'Done'}</span>`}
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      } else if (currentAdminTab === 'users') {
+        const users = await adminApi('/users');
+        box.innerHTML = `
+          <div class="space-y-4">
+            <h2 class="text-sm font-bold text-white">Registered Users & Wallet Balances</h2>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="border-b border-[#23283a] text-gray-400">
+                    <th class="py-2.5">User ID</th>
+                    <th>Phone</th>
+                    <th>Wallet Balance</th>
+                    <th>Invite Code</th>
+                    <th>Referred By</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2333]">
+                  ${users.map(u => `
+                    <tr>
+                      <td class="py-3 text-gray-400 font-mono">#${u.id}</td>
+                      <td class="font-bold text-white">${u.phone}</td>
+                      <td class="font-bold text-[#00C853]">ETB ${u.balance.toLocaleString()}</td>
+                      <td class="font-mono text-emerald-400">${u.invite_code}</td>
+                      <td class="text-gray-400">${u.referred_by || 'Direct'}</td>
+                      <td>
+                        <button onclick="adjustUserBalance(${u.id}, '${u.phone}')" class="px-2.5 py-1 bg-[#222736] hover:bg-[#2b3145] text-gray-200 font-bold rounded text-[11px]">
+                          Adjust Balance
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }
+      lucide.createIcons();
+    }
+
+    async function handleDepositAction(id, action) {
+      await adminApi(`/deposits/${id}/action`, {
+        method: 'POST',
+        body: JSON.stringify({ action })
+      });
+      loadOverview();
+      renderAdminContent();
+    }
+
+    async function handleWithdrawAction(id, action) {
+      let admin_tx_id = '';
+      if (action === 'approve') {
+        admin_tx_id = prompt('Enter Bank / Telebirr Transaction ID sent to client:', 'PAY' + Math.floor(Math.random() * 900000));
+        if (!admin_tx_id) return;
+      }
+      await adminApi(`/withdrawals/${id}/action`, {
+        method: 'POST',
+        body: JSON.stringify({ action, admin_tx_id })
+      });
+      loadOverview();
+      renderAdminContent();
+    }
+
+    async function adjustUserBalance(id, phone) {
+      const delta = prompt(`Enter amount to add or subtract for user ${phone} (e.g. +500 or -200):`, '500');
+      if (delta) {
+        await adminApi(`/users/${id}/adjust-balance`, {
+          method: 'POST',
+          body: JSON.stringify({ deltaAmount: delta })
+        });
+        loadOverview();
+        renderAdminContent();
+      }
+    }
+
+    function logoutAdmin() {
+      localStorage.removeItem('halal_admin_token');
+      location.reload();
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      await autoLoginAdmin();
+      await loadOverview();
+      renderAdminContent();
+    });
+  </script>
+</body>
+</html>

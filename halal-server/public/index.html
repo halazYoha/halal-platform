@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>HALAL - Ethical Equipment Investment & Fabrication</title>
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            halal: {
+              green: '#00C853',
+              darkgreen: '#009624',
+              bg: '#121316',
+              card: '#1a1c23',
+              subcard: '#22252e',
+              border: '#2c303c'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #0d0e12;
+      color: #f3f4f6;
+      font-family: 'Inter', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .custom-scroll::-webkit-scrollbar {
+      display: none;
+    }
+    .custom-scroll {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    @keyframes marquee {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
+    }
+    .animate-marquee {
+      display: inline-block;
+      white-space: nowrap;
+      animation: marquee 18s linear infinite;
+    }
+  </style>
+</head>
+<body class="bg-[#0b0c10] text-[#f3f4f6] min-h-screen flex flex-col items-center justify-start">
+
+  <!-- Responsive Container: Full screen on phones (w-full), sleek device frame on desktop/tablets (md:max-w-md md:my-6 md:rounded-3xl md:border md:border-[#262a38] md:shadow-2xl md:overflow-hidden) -->
+  <div id="app-container" class="w-full max-w-md bg-[#121316] min-h-screen md:min-h-[860px] flex flex-col relative pb-20 select-none shadow-2xl transition-all">
+    
+    <!-- TOP NOTIFICATION TOAST -->
+    <div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg text-sm font-medium shadow-xl transition-all duration-300 opacity-0 pointer-events-none max-w-xs text-center"></div>
+
+    <!-- MAIN VIEWS CONTAINER -->
+    <main id="main-view" class="flex-1 overflow-y-auto custom-scroll w-full"></main>
+
+    <!-- BOTTOM NAVIGATION BAR (Anchored to mobile frame on desktop, fixed bottom on phones) -->
+    <nav class="fixed md:absolute bottom-0 left-0 right-0 w-full max-w-md mx-auto bg-[#14161d]/95 backdrop-blur-md border-t border-[#232633] z-40 flex items-center justify-around py-2">
+      <button onclick="switchTab('product')" id="nav-product" class="flex flex-col items-center flex-1 py-1 text-[#00C853] transition-colors">
+        <i data-lucide="home" class="w-5 h-5 mb-1"></i>
+        <span class="text-[11px] font-medium">Product</span>
+      </button>
+
+      <button onclick="switchTab('my-product')" id="nav-my-product" class="flex flex-col items-center flex-1 py-1 text-gray-400 hover:text-gray-200 transition-colors">
+        <i data-lucide="layout-grid" class="w-5 h-5 mb-1"></i>
+        <span class="text-[11px] font-medium">My product</span>
+      </button>
+
+      <button onclick="switchTab('my-team')" id="nav-my-team" class="flex flex-col items-center flex-1 py-1 text-gray-400 hover:text-gray-200 transition-colors">
+        <i data-lucide="star" class="w-5 h-5 mb-1"></i>
+        <span class="text-[11px] font-medium">My team</span>
+      </button>
+
+      <button onclick="switchTab('mine')" id="nav-mine" class="flex flex-col items-center flex-1 py-1 text-gray-400 hover:text-gray-200 transition-colors">
+        <i data-lucide="user" class="w-5 h-5 mb-1"></i>
+        <span class="text-[11px] font-medium">Mine</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- APPLICATION SCRIPTS -->
+  <script src="/app.js"></script>
+</body>
+</html>
