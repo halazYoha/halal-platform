@@ -507,12 +507,14 @@ function renderMineTab() {
           </div>
         </div>
 
-        <!-- LINK TO ADMIN DASHBOARD FOR DEMO -->
-        <div class="pt-2">
-          <a href="/admin.html" class="block w-full text-center py-2.5 bg-[#232736] hover:bg-[#2b3042] text-xs font-bold text-[#00C853] rounded-xl border border-emerald-500/20">
-            Open Admin Management Desk ➔
-          </a>
-        </div>
+        <!-- ADMIN PORTAL ACCESS (Strictly visible ONLY to users with role === 'admin') -->
+        ${state.user?.role === 'admin' ? `
+          <div class="pt-2">
+            <a href="/admin.html" class="block w-full text-center py-2.5 bg-[#232736] hover:bg-[#2b3042] text-xs font-bold text-[#00C853] rounded-xl border border-emerald-500/20 shadow-lg">
+              🛡️ Enter Admin Management Desk ➔
+            </a>
+          </div>
+        ` : ''}
       </div>
     </div>
   `;
