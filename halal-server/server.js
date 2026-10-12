@@ -59,7 +59,13 @@ app.post('/api/auth/register', (req, res) => {
     return res.status(400).json({ error: 'Phone number and password required' });
   }
 
-  const existing = db.prepare('SELECT id FROM users WHERE phone = ?').get(phone);
+  // Phone must be numeric (Ethiopian format)
+  const phoneClean = phone.toString().replace(/\s+/g, '');
+  if (!/^\d{9,15}$/.test(phoneClean)) {
+    return res.status(400).json({ error: 'Phone number must be numeric (9-15 digits)' });
+  }
+
+  const existing = db.prepare('SELECT id FROM users WHERE phone = ?').get(phoneClean);
   if (existing) {
     return res.status(400).json({ error: 'Phone number is already registered' });
   }
@@ -75,28 +81,28 @@ app.post('/api/auth/register', (req, res) => {
 
   const hashedPassword = bcrypt.hashSync(password, 10);
   let inviteCode = generateInviteCode();
-  // Ensure unique
   while (db.prepare('SELECT id FROM users WHERE invite_code = ?').get(inviteCode)) {
     inviteCode = generateInviteCode();
   }
 
   const insert = db.prepare(`
-    INSERT INTO users (phone, password, balance, role, invite_code, referred_by)
-    VALUES (?, ?, 0, 'user', ?, ?)
+    INSERT INTO users (phone, password, balance, role, invite_code, referred_by, has_deposited)
+    VALUES (?, ?, 0, 'user', ?, ?, 0)
   `);
-  const result = insert.run(phone, hashedPassword, inviteCode, referredBy);
+  const result = insert.run(phoneClean, hashedPassword, inviteCode, referredBy);
 
-  const token = jwt.sign({ id: result.lastInsertRowid, phone, role: 'user' }, JWT_SECRET, { expiresIn: '7d' });
+  const token = jwt.sign({ id: result.lastInsertRowid, phone: phoneClean, role: 'user' }, JWT_SECRET, { expiresIn: '7d' });
   res.json({
     token,
-    user: { id: result.lastInsertRowid, phone, balance: 0, role: 'user', invite_code: inviteCode }
+    user: { id: result.lastInsertRowid, phone: phoneClean, balance: 0, role: 'user', invite_code: inviteCode, has_deposited: 0 }
   });
 });
 
 // Login
 app.post('/api/auth/login', (req, res) => {
   const { phone, password } = req.body;
-  const user = db.prepare('SELECT * FROM users WHERE phone = ?').get(phone);
+  const phoneClean = phone ? phone.toString().replace(/\s+/g, '') : '';
+  const user = db.prepare('SELECT * FROM users WHERE phone = ?').get(phoneClean);
   if (!user) {
     return res.status(400).json({ error: 'Invalid phone or password' });
   }
@@ -117,14 +123,15 @@ app.post('/api/auth/login', (req, res) => {
       invite_code: user.invite_code,
       telebirr_account: user.telebirr_account,
       bank_name: user.bank_name,
-      bank_account: user.bank_account
+      bank_account: user.bank_account,
+      has_deposited: user.has_deposited || 0
     }
   });
 });
 
 // Get Current User Profile
 app.get('/api/user/profile', authenticateToken, (req, res) => {
-  const user = db.prepare('SELECT id, phone, balance, role, invite_code, telebirr_account, bank_name, bank_account, created_at FROM users WHERE id = ?').get(req.user.id);
+  const user = db.prepare('SELECT id, phone, balance, role, invite_code, telebirr_account, bank_name, bank_account, created_at, has_deposited FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json(user);
 });
@@ -156,15 +163,20 @@ app.get('/api/products', (req, res) => {
 // Buy / Rent VIP Product
 app.post('/api/products/buy', authenticateToken, (req, res) => {
   const { productId } = req.body;
-  const user = db.prepare('SELECT id, balance, referred_by FROM users WHERE id = ?').get(req.user.id);
+  const user = db.prepare('SELECT id, balance, referred_by, has_deposited FROM users WHERE id = ?').get(req.user.id);
   const product = db.prepare('SELECT * FROM products WHERE id = ? AND active = 1').get(productId);
 
   if (!product) return res.status(404).json({ error: 'VIP Product not found' });
+
+  // Require deposit before buying
+  if (!user.has_deposited) {
+    return res.status(400).json({ error: 'You must make a deposit before purchasing a VIP plan.' });
+  }
+
   if (user.balance < product.price) {
     return res.status(400).json({ error: `Insufficient balance. Need ETB ${product.price}, your balance is ETB ${user.balance}` });
   }
 
-  // Deduct user balance & create order inside a transaction
   const buyTx = db.transaction(() => {
     db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(product.price, user.id);
     const orderResult = db.prepare(`
@@ -173,7 +185,6 @@ app.post('/api/products/buy', authenticateToken, (req, res) => {
     `).run(user.id, product.id, product.name, product.price, product.daily_income, product.validity_days);
 
     // Distribute 3-Level Referral Commission
-    // Level 1: 35%, Level 2: 3%, Level 3: 2%
     let currentReferrerCode = user.referred_by;
     const rates = [
       { level: 1, rate: 0.35 },
@@ -186,14 +197,11 @@ app.post('/api/products/buy', authenticateToken, (req, res) => {
       const refUser = db.prepare('SELECT id, balance, referred_by FROM users WHERE invite_code = ?').get(currentReferrerCode);
       if (refUser) {
         const commissionAmount = product.price * r.rate;
-        // Credit referrer balance
         db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(commissionAmount, refUser.id);
-        // Log commission
         db.prepare(`
           INSERT INTO commissions (beneficiary_id, from_user_id, level, rate, amount, order_id)
           VALUES (?, ?, ?, ?, ?, ?)
         `).run(refUser.id, user.id, r.level, r.rate, commissionAmount, orderResult.lastInsertRowid);
-
         currentReferrerCode = refUser.referred_by;
       } else {
         break;
@@ -249,7 +257,6 @@ app.post('/api/orders/claim-income', authenticateToken, (req, res) => {
 
   const claimTx = db.transaction(() => {
     for (const order of orders) {
-      // Allow claim once per simulation/cycle
       totalClaimed += order.daily_income;
       db.prepare(`
         UPDATE orders 
@@ -290,95 +297,72 @@ app.get('/api/deposits/receiver-info', (req, res) => {
       accountNumber: '1000344285048',
       bank: 'Commercial Bank of Ethiopia (CBE)'
     },
-    minimumDeposit: 800
+    minimumDeposit: 800,
+    depositBonus: 100
   });
 });
 
-// Test / Parse Transaction SMS Preview (Client side live validation)
+// Test / Parse Transaction SMS Preview
 app.post('/api/deposits/parse-preview', (req, res) => {
   const { rawSms } = req.body;
   const parsed = parseTransactionSMS(rawSms);
   res.json(parsed);
 });
 
-// Submit Deposited SMS for Verification & Auto-Credit
-app.post('/api/deposits/verify-and-submit', authenticateToken, (req, res) => {
-  const { rawSms, selectedAmount } = req.body;
-  if (!rawSms) {
-    return res.status(400).json({ error: 'Transaction SMS is required' });
+// Submit Deposit (Now goes to admin for manual verification)
+app.post('/api/deposits/submit', authenticateToken, (req, res) => {
+  const { rawSms, amount, provider } = req.body;
+
+  if (!rawSms && !amount) {
+    return res.status(400).json({ error: 'Transaction message or amount is required' });
   }
 
-  const parsed = parseTransactionSMS(rawSms);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error });
+  let depositAmount = parseFloat(amount) || 0;
+  let depositProvider = provider || 'TELEBIRR';
+  let transactionId = `TXN_${Date.now()}_${req.user.id}`;
+  let parsedData = null;
+
+  // Try to parse SMS if provided
+  if (rawSms) {
+    parsedData = parseTransactionSMS(rawSms);
+    if (parsedData.success) {
+      depositAmount = parsedData.amount || depositAmount;
+      depositProvider = parsedData.provider || depositProvider;
+      transactionId = parsedData.transactionId || transactionId;
+    }
   }
 
-  // 1. Check for Duplicate Transaction ID
-  const existingDeposit = db.prepare('SELECT id, status FROM deposits WHERE transaction_id = ?').get(parsed.transactionId);
-  if (existingDeposit) {
-    return res.status(400).json({
-      error: `Transaction ID ${parsed.transactionId} has already been processed and cannot be reused.`
-    });
+  // Minimum deposit check
+  if (depositAmount < 800) {
+    return res.status(400).json({ error: 'Minimum deposit is ETB 800.' });
   }
 
-  // 2. Minimum Deposit check
-  if (parsed.amount < 800) {
-    return res.status(400).json({
-      error: `Minimum deposit is ETB 800. Parsed amount is ETB ${parsed.amount}.`
-    });
-  }
-
-  // 3. Automated Check against Business Incoming SMS Log (if registered)
-  const incomingLog = db.prepare('SELECT * FROM incoming_sms_logs WHERE transaction_id = ? AND claimed = 0').get(parsed.transactionId);
-
-  // If incoming log exists or in direct verification mode, automatically approve and credit
-  const autoApprove = !!incomingLog || true; // In standard mode, immediately record and credit or set pending based on preference
-
-  if (autoApprove) {
-    const depositTx = db.transaction(() => {
-      // Record Deposit
-      db.prepare(`
-        INSERT INTO deposits (user_id, provider, transaction_id, amount, raw_message, status, verification_type)
-        VALUES (?, ?, ?, ?, ?, 'approved', 'auto')
-      `).run(req.user.id, parsed.provider, parsed.transactionId, parsed.amount, rawSms);
-
-      // Add to user balance
-      db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(parsed.amount, req.user.id);
-
-      // Mark incoming log as claimed if was present
-      if (incomingLog) {
-        db.prepare('UPDATE incoming_sms_logs SET claimed = 1 WHERE id = ?').run(incomingLog.id);
-      }
-    });
-
-    depositTx();
-
-    const user = db.prepare('SELECT balance FROM users WHERE id = ?').get(req.user.id);
-    return res.json({
-      success: true,
-      status: 'approved',
-      message: `Verified! ETB ${parsed.amount.toLocaleString()} has been instantly added to your Halal account.`,
-      transactionId: parsed.transactionId,
-      amount: parsed.amount,
-      provider: parsed.provider,
-      newBalance: user.balance
-    });
+  // Check for duplicate transaction ID (only for auto-parsed ones)
+  if (parsedData && parsedData.success && parsedData.transactionId) {
+    const existingDeposit = db.prepare('SELECT id FROM deposits WHERE transaction_id = ?').get(parsedData.transactionId);
+    if (existingDeposit) {
+      return res.status(400).json({ error: `Transaction ID already submitted. Cannot reuse transaction.` });
+    }
+    transactionId = parsedData.transactionId;
   } else {
-    // Record for Admin Review
-    db.prepare(`
-      INSERT INTO deposits (user_id, provider, transaction_id, amount, raw_message, status, verification_type)
-      VALUES (?, ?, ?, ?, ?, 'pending', 'admin')
-    `).run(req.user.id, parsed.provider, parsed.transactionId, parsed.amount, rawSms);
-
-    return res.json({
-      success: true,
-      status: 'pending',
-      message: `Deposit with TxID ${parsed.transactionId} submitted for quick admin confirmation.`,
-      transactionId: parsed.transactionId,
-      amount: parsed.amount,
-      provider: parsed.provider
-    });
+    // Generate unique ID for manual submissions
+    transactionId = `MANUAL_${Date.now()}_${req.user.id}`;
   }
+
+  // Insert as PENDING for admin approval
+  db.prepare(`
+    INSERT INTO deposits (user_id, provider, transaction_id, amount, raw_message, status, verification_type)
+    VALUES (?, ?, ?, ?, ?, 'pending', 'admin')
+  `).run(req.user.id, depositProvider, transactionId, depositAmount, rawSms || `Manual deposit of ETB ${depositAmount}`);
+
+  return res.json({
+    success: true,
+    status: 'pending',
+    message: `Deposit request of ETB ${depositAmount.toLocaleString()} submitted. Waiting for admin verification.`,
+    transactionId,
+    amount: depositAmount,
+    provider: depositProvider
+  });
 });
 
 // Get User Deposit Records
@@ -396,26 +380,28 @@ app.post('/api/withdrawals/submit', authenticateToken, (req, res) => {
   const { amount, channel, accountNumber, accountName } = req.body;
   const numAmount = parseFloat(amount);
 
-  if (!numAmount || numAmount < 200) {
-    return res.status(400).json({ error: 'Minimum withdrawal is ETB 200.' });
+  if (!numAmount || numAmount < 100) {
+    return res.status(400).json({ error: 'Minimum withdrawal is ETB 100.' });
   }
   if (!accountNumber) {
     return res.status(400).json({ error: 'Account number / Telebirr phone is required.' });
   }
 
-  const user = db.prepare('SELECT balance FROM users WHERE id = ?').get(req.user.id);
-  if (user.balance < numAmount) {
-    return res.status(400).json({ error: `Insufficient balance. Available: ETB ${user.balance}` });
+  // Check if user has ever made a deposit
+  const user = db.prepare('SELECT balance, has_deposited FROM users WHERE id = ?').get(req.user.id);
+  if (!user.has_deposited) {
+    return res.status(400).json({ error: 'You must make a deposit before withdrawing.' });
   }
 
-  const fee = 0; // 0% Halal fee or customizable
+  if (user.balance < numAmount) {
+    return res.status(400).json({ error: `Insufficient balance. Available: ETB ${user.balance.toFixed(2)}` });
+  }
+
+  const fee = 0;
   const finalAmount = numAmount - fee;
 
   const withdrawTx = db.transaction(() => {
-    // Deduct user balance
     db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(numAmount, req.user.id);
-
-    // Insert withdrawal record
     db.prepare(`
       INSERT INTO withdrawals (user_id, channel, account_number, account_name, amount, fee, final_amount, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
@@ -427,7 +413,7 @@ app.post('/api/withdrawals/submit', authenticateToken, (req, res) => {
 
   res.json({
     success: true,
-    message: 'Withdrawal request submitted successfully. Payout will be sent within 15-30 minutes.',
+    message: 'Withdrawal request submitted. Admin will process within 30 minutes.',
     newBalance: updatedUser.balance
   });
 });
@@ -449,8 +435,7 @@ app.get('/api/team/stats', authenticateToken, (req, res) => {
   const level1Users = db.prepare('SELECT id, phone, created_at FROM users WHERE referred_by = ?').all(user.invite_code);
   const l1Count = level1Users.length;
 
-  // Level 2: invites of direct invites
-  const l1Codes = level1Users.map(u => u.id);
+  // Level 2
   let l2Users = [];
   if (level1Users.length > 0) {
     const l1InviteCodes = db.prepare(`SELECT invite_code FROM users WHERE id IN (${level1Users.map(() => '?').join(',')})`).all(...level1Users.map(u => u.id)).map(r => r.invite_code);
@@ -460,14 +445,13 @@ app.get('/api/team/stats', authenticateToken, (req, res) => {
   }
   const l2Count = l2Users.length;
 
-  // Level 3: invites of level 2
+  // Level 3
   let l3Count = 0;
   if (l2Users.length > 0) {
     const l2InviteCodes = l2Users.map(u => u.invite_code);
     l3Count = db.prepare(`SELECT COUNT(*) as count FROM users WHERE referred_by IN (${l2InviteCodes.map(() => '?').join(',')})`).get(...l2InviteCodes).count;
   }
 
-  // Earnings per level
   const l1Earnings = db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM commissions WHERE beneficiary_id = ? AND level = 1').get(req.user.id).total;
   const l2Earnings = db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM commissions WHERE beneficiary_id = ? AND level = 2').get(req.user.id).total;
   const l3Earnings = db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM commissions WHERE beneficiary_id = ? AND level = 3').get(req.user.id).total;
@@ -477,7 +461,7 @@ app.get('/api/team/stats', authenticateToken, (req, res) => {
 
   res.json({
     inviteCode: user.invite_code,
-    inviteLink: `https://halal.et/reg?code=${user.invite_code}`,
+    inviteLink: `https://halal-invest.com/register?ref=${user.invite_code}`,
     totalValidUsers,
     totalInvitedIncome,
     levels: [
@@ -489,7 +473,7 @@ app.get('/api/team/stats', authenticateToken, (req, res) => {
 });
 
 // ==========================================
-// 6. ADMIN DASHBOARD APIS (`/api/admin/...`)
+// 6. ADMIN DASHBOARD APIS
 // ==========================================
 
 // Dashboard Statistics Overview
@@ -513,21 +497,21 @@ app.get('/api/admin/overview', authenticateToken, requireAdmin, (req, res) => {
   });
 });
 
-// All Deposits for Admin
+// All Deposits for Admin (pending first)
 app.get('/api/admin/deposits', authenticateToken, requireAdmin, (req, res) => {
   const deposits = db.prepare(`
     SELECT d.*, u.phone as user_phone
     FROM deposits d
     JOIN users u ON d.user_id = u.id
-    ORDER BY d.id DESC
+    ORDER BY CASE d.status WHEN 'pending' THEN 0 ELSE 1 END, d.id DESC
   `).all();
   res.json(deposits);
 });
 
-// Approve or Reject Deposit
+// Approve or Reject Deposit (with 100 ETB bonus on first deposit)
 app.post('/api/admin/deposits/:id/action', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
-  const { action, notes } = req.body; // 'approve' or 'reject'
+  const { action, notes } = req.body;
   const deposit = db.prepare('SELECT * FROM deposits WHERE id = ?').get(id);
 
   if (!deposit) return res.status(404).json({ error: 'Deposit record not found' });
@@ -538,9 +522,25 @@ app.post('/api/admin/deposits/:id/action', authenticateToken, requireAdmin, (req
   if (action === 'approve') {
     const approveTx = db.transaction(() => {
       db.prepare('UPDATE deposits SET status = "approved", reviewed_by = "admin", notes = ? WHERE id = ?').run(notes || null, id);
-      db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(deposit.amount, deposit.user_id);
+
+      // Check if user has deposited before
+      const user = db.prepare('SELECT has_deposited FROM users WHERE id = ?').get(deposit.user_id);
+      let totalCredit = deposit.amount;
+      let bonusApplied = false;
+
+      // Give 100 ETB bonus on first deposit
+      if (!user.has_deposited) {
+        totalCredit += 100;
+        bonusApplied = true;
+        db.prepare('UPDATE users SET has_deposited = 1 WHERE id = ?').run(deposit.user_id);
+      }
+
+      // Credit user balance
+      db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(totalCredit, deposit.user_id);
     });
     approveTx();
+    const dep = db.prepare('SELECT * FROM deposits WHERE id = ?').get(id);
+    const userChk = db.prepare('SELECT has_deposited FROM users WHERE id = ?').get(deposit.user_id);
     res.json({ success: true, message: `Deposit of ETB ${deposit.amount} approved and credited.` });
   } else {
     db.prepare('UPDATE deposits SET status = "rejected", reviewed_by = "admin", notes = ? WHERE id = ?').run(notes || 'Rejected by admin', id);
@@ -548,18 +548,18 @@ app.post('/api/admin/deposits/:id/action', authenticateToken, requireAdmin, (req
   }
 });
 
-// All Withdrawals for Admin
+// All Withdrawals for Admin (pending first)
 app.get('/api/admin/withdrawals', authenticateToken, requireAdmin, (req, res) => {
   const withdrawals = db.prepare(`
     SELECT w.*, u.phone as user_phone, u.balance as current_balance
     FROM withdrawals w
     JOIN users u ON w.user_id = u.id
-    ORDER BY w.id DESC
+    ORDER BY CASE w.status WHEN 'pending' THEN 0 ELSE 1 END, w.id DESC
   `).all();
   res.json(withdrawals);
 });
 
-// Process Withdrawal (Pay / Reject)
+// Process Withdrawal
 app.post('/api/admin/withdrawals/:id/action', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
   const { action, admin_tx_id } = req.body;
@@ -574,7 +574,6 @@ app.post('/api/admin/withdrawals/:id/action', authenticateToken, requireAdmin, (
     db.prepare('UPDATE withdrawals SET status = "approved", admin_tx_id = ? WHERE id = ?').run(admin_tx_id || 'PROCESSED', id);
     res.json({ success: true, message: 'Withdrawal marked approved and paid.' });
   } else {
-    // Refund balance on reject
     const refundTx = db.transaction(() => {
       db.prepare('UPDATE withdrawals SET status = "rejected", admin_tx_id = "REFUNDED" WHERE id = ?').run(id);
       db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(withdrawal.amount, withdrawal.user_id);
@@ -586,14 +585,14 @@ app.post('/api/admin/withdrawals/:id/action', authenticateToken, requireAdmin, (
 
 // All Users for Admin
 app.get('/api/admin/users', authenticateToken, requireAdmin, (req, res) => {
-  const users = db.prepare('SELECT id, phone, balance, role, invite_code, referred_by, created_at FROM users ORDER BY id DESC').all();
+  const users = db.prepare('SELECT id, phone, balance, role, invite_code, referred_by, has_deposited, created_at FROM users ORDER BY id DESC').all();
   res.json(users);
 });
 
 // Update User Balance by Admin
 app.post('/api/admin/users/:id/adjust-balance', authenticateToken, requireAdmin, (req, res) => {
   const { id } = req.params;
-  const { deltaAmount } = req.body; // e.g. +500 or -500
+  const { deltaAmount } = req.body;
   const amt = parseFloat(deltaAmount);
   if (isNaN(amt)) return res.status(400).json({ error: 'Invalid delta amount' });
 
@@ -602,7 +601,16 @@ app.post('/api/admin/users/:id/adjust-balance', authenticateToken, requireAdmin,
   res.json({ success: true, newBalance: updated.balance });
 });
 
-// SMS Forwarder Webhook (Receives SMS from phone app)
+// Update user role (promote/demote admin)
+app.post('/api/admin/users/:id/set-role', authenticateToken, requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const { role } = req.body;
+  if (!['user', 'admin'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
+  res.json({ success: true });
+});
+
+// SMS Forwarder Webhook
 app.post('/api/webhook/sms', (req, res) => {
   const { text, from } = req.body;
   if (!text) return res.status(400).json({ error: 'Missing text' });

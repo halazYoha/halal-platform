@@ -17,18 +17,19 @@ function initDb() {
       phone TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       balance REAL DEFAULT 0.0,
-      role TEXT DEFAULT 'user', -- 'user' or 'admin'
+      role TEXT DEFAULT 'user',
       invite_code TEXT UNIQUE NOT NULL,
-      referred_by TEXT, -- invite_code of inviter
+      referred_by TEXT,
       telebirr_account TEXT,
       bank_name TEXT,
       bank_account TEXT,
+      has_deposited INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS products (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL, -- e.g. 'HALAL VIP 1'
+      name TEXT NOT NULL,
       tier_level INTEGER NOT NULL,
       price REAL NOT NULL,
       daily_income REAL NOT NULL,
@@ -50,7 +51,7 @@ function initDb() {
       total_earned REAL DEFAULT 0.0,
       days_claimed INTEGER DEFAULT 0,
       last_claimed_at DATETIME,
-      status TEXT DEFAULT 'active', -- 'active', 'completed'
+      status TEXT DEFAULT 'active',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id),
       FOREIGN KEY (product_id) REFERENCES products(id)
@@ -59,12 +60,12 @@ function initDb() {
     CREATE TABLE IF NOT EXISTS deposits (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
-      provider TEXT NOT NULL, -- 'TELEBIRR' or 'CBE'
+      provider TEXT NOT NULL,
       transaction_id TEXT UNIQUE NOT NULL,
       amount REAL NOT NULL,
       raw_message TEXT,
-      status TEXT DEFAULT 'approved', -- 'approved', 'pending', 'rejected'
-      verification_type TEXT DEFAULT 'auto', -- 'auto' or 'admin'
+      status TEXT DEFAULT 'pending',
+      verification_type TEXT DEFAULT 'admin',
       reviewed_by TEXT,
       notes TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -74,13 +75,13 @@ function initDb() {
     CREATE TABLE IF NOT EXISTS withdrawals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
-      channel TEXT NOT NULL, -- 'TELEBIRR' or 'CBE'
+      channel TEXT NOT NULL,
       account_number TEXT NOT NULL,
       account_name TEXT,
       amount REAL NOT NULL,
       fee REAL DEFAULT 0.0,
       final_amount REAL NOT NULL,
-      status TEXT DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+      status TEXT DEFAULT 'pending',
       admin_tx_id TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
@@ -101,7 +102,7 @@ function initDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       beneficiary_id INTEGER NOT NULL,
       from_user_id INTEGER NOT NULL,
-      level INTEGER NOT NULL, -- 1 (35%), 2 (3%), 3 (2%)
+      level INTEGER NOT NULL,
       rate REAL NOT NULL,
       amount REAL NOT NULL,
       order_id INTEGER,
@@ -110,6 +111,13 @@ function initDb() {
       FOREIGN KEY (from_user_id) REFERENCES users(id)
     );
   `);
+
+  // Add has_deposited column if it doesn't exist (migration)
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN has_deposited INTEGER DEFAULT 0');
+  } catch (e) {
+    // Column already exists, ignore
+  }
 
   // Seed Default Products if empty
   const count = db.prepare('SELECT COUNT(*) as count FROM products').get().count;
@@ -124,6 +132,7 @@ function initDb() {
     insertProduct.run('VIP3 Halal Industrial', 3, 3000, 750, 67500, 90, 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=500&auto=format&fit=crop&q=60');
     insertProduct.run('VIP4 Halal Pro Master', 4, 5000, 1250, 112500, 90, 'https://images.unsplash.com/photo-1581092580497-e0d23cbdf1dc?w=500&auto=format&fit=crop&q=60');
     insertProduct.run('VIP5 Halal Enterprise', 5, 10000, 2500, 225000, 90, 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?w=500&auto=format&fit=crop&q=60');
+    insertProduct.run('VIP6 Halal Supreme', 6, 20000, 5000, 450000, 90, 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=500&auto=format&fit=crop&q=60');
   }
 
   // Seed Admin user
@@ -131,19 +140,9 @@ function initDb() {
   if (!adminExists) {
     const hashed = bcrypt.hashSync('admin123', 10);
     db.prepare(`
-      INSERT INTO users (phone, password, balance, role, invite_code)
-      VALUES (?, ?, ?, ?, ?)
-    `).run('admin', hashed, 999999, 'admin', 'HALALADMIN');
-  }
-
-  // Seed Demo User
-  const demoExists = db.prepare('SELECT id FROM users WHERE phone = ?').get('251938236272');
-  if (!demoExists) {
-    const hashed = bcrypt.hashSync('123456', 10);
-    db.prepare(`
-      INSERT INTO users (phone, password, balance, role, invite_code)
-      VALUES (?, ?, ?, ?, ?)
-    `).run('251938236272', hashed, 1500, 'user', 'ERI777');
+      INSERT INTO users (phone, password, balance, role, invite_code, has_deposited)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run('admin', hashed, 999999, 'admin', 'HALALADMIN', 1);
   }
 }
 
