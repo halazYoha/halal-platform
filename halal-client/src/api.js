@@ -1,5 +1,5 @@
 // src/api.js - API utility for Halal Platform
-const BASE_URL = import.meta.env.VITE_API_URL || '';
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://halal-platform.onrender.com';
 
 function getToken() {
   return localStorage.getItem('halal_token');
