@@ -137,21 +137,45 @@ function AuthPage({ onLogin }) {
 }
 
 // ===================== MARQUEE BANNER =====================
+// Fake realistic Ethiopian phone numbers (masked)
+const HOT_TRANSACTIONS = [
+  { phone: '09****2845', amount: '50,000', type: 'Recharge' },
+  { phone: '07****1190', amount: '10,000', type: 'Recharge' },
+  { phone: '09****7733', amount: '3,000',  type: 'Recharge' },
+  { phone: '09****4412', amount: '25,000', type: 'Recharge' },
+  { phone: '07****8821', amount: '5,000',  type: 'Recharge' },
+  { phone: '09****6657', amount: '1,500',  type: 'Recharge' },
+  { phone: '09****3309', amount: '800',    type: 'Recharge' },
+  { phone: '07****5541', amount: '15,000', type: 'Recharge' },
+  { phone: '09****0077', amount: '2,000',  type: 'Recharge' },
+  { phone: '09****9923', amount: '8,000',  type: 'Recharge' },
+  { phone: '07****1188', amount: '20,000', type: 'Withdrawal' },
+  { phone: '09****4456', amount: '6,500',  type: 'Withdrawal' },
+  { phone: '09****7712', amount: '1,200',  type: 'Income' },
+  { phone: '07****3345', amount: '750',    type: 'Income' },
+  { phone: '09****8890', amount: '4,500',  type: 'Income' },
+];
+
 function MarqueeBanner() {
-  const items = [
-    { text: '🔥 VIP1: ETB 800 → ETB 200/day returns' },
-    { text: '💎 New member bonus: ETB 100 gift on first deposit!' },
-    { text: '🏆 VIP5: ETB 10,000 → ETB 2,500/day' },
-    { text: '✨ Invite friends and earn 35% referral commission' },
-    { text: '📱 Minimum deposit: ETB 800 | Minimum withdraw: ETB 100' },
-  ];
+  const doubled = [...HOT_TRANSACTIONS, ...HOT_TRANSACTIONS];
   return (
     <div className="marquee-banner">
       <div className="marquee-inner">
-        {[...items, ...items].map((item, i) => (
+        {doubled.map((tx, i) => (
           <div key={i} className="marquee-item">
-            <div className="marquee-dot" />
-            {item.text}
+            <div className="marquee-dot" style={{
+              background: tx.type === 'Withdrawal' ? 'var(--warning)'
+                : tx.type === 'Income' ? '#00bfff'
+                : 'var(--primary)'
+            }} />
+            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Hot:</span>
+            <span style={{ color: 'white', fontWeight: 600 }}>{tx.phone}</span>
+            <span style={{ color: 'var(--text-muted)' }}>
+              {tx.type === 'Withdrawal' ? 'Withdrew' : tx.type === 'Income' ? 'Earned' : 'Recharged'}
+            </span>
+            <span style={{ color: tx.type === 'Withdrawal' ? 'var(--warning)' : tx.type === 'Income' ? '#00bfff' : 'var(--primary)', fontWeight: 700 }}>
+              ETB {tx.amount}
+            </span>
           </div>
         ))}
       </div>
@@ -530,51 +554,77 @@ function HomePage({ user, onRefreshUser }) {
         <div className="empty-state"><div className="loading-spinner" style={{ margin: '0 auto' }} /></div>
       ) : (
         <div className="products-grid">
-          {products.map(product => (
-            <div key={product.id} className="product-card fade-in">
-              <div className="product-card-header">
-                <img
-                  className="product-img"
-                  src={product.image}
-                  alt={product.name}
-                  onError={e => { e.target.src = 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=500&auto=format&fit=crop&q=60'; }}
-                />
-                <div className="product-info">
-                  <div className="product-tier-badge">⭐ VIP{product.tier_level}</div>
-                  <div className="product-name">{product.name}</div>
-                  <div className="product-category">{product.category}</div>
+          {products.map(product => {
+            // Fast, tier-colored gradient placeholder instead of slow remote images
+            const tierColors = [
+              'linear-gradient(135deg,#1a472a,#2d6a4f)',
+              'linear-gradient(135deg,#1b4f8a,#2874a6)',
+              'linear-gradient(135deg,#512e7a,#7d3c98)',
+              'linear-gradient(135deg,#7b2d00,#d35400)',
+              'linear-gradient(135deg,#7d6608,#d4ac0d)',
+              'linear-gradient(135deg,#1a252f,#2c3e50)',
+            ];
+            const tierEmojis = ['🖥️','💻','🏭','⚙️','🔬','🚀'];
+            const bgColor = tierColors[(product.tier_level - 1) % tierColors.length];
+            const emoji = tierEmojis[(product.tier_level - 1) % tierEmojis.length];
+            return (
+              <div key={product.id} className="product-card fade-in">
+                <div className="product-card-header">
+                  {/* Optimised image: tiny size param + lazy load. Falls back to gradient tile */}
+                  <div className="product-img-wrap">
+                    <img
+                      className="product-img"
+                      src={`${product.image?.split('?')[0]}?w=120&h=120&auto=format&fit=crop&q=50&fm=webp`}
+                      alt={product.name}
+                      loading="lazy"
+                      width="64"
+                      height="64"
+                      onError={e => {
+                        e.target.style.display = 'none';
+                        e.target.nextSibling.style.display = 'flex';
+                      }}
+                    />
+                    <div className="product-img-fallback" style={{ background: bgColor }}>
+                      {emoji}
+                    </div>
+                  </div>
+                  <div className="product-info">
+                    <div className="product-tier-badge">⭐ VIP{product.tier_level}</div>
+                    <div className="product-name">{product.name}</div>
+                    <div className="product-category">{product.category}</div>
+                  </div>
+                </div>
+                <div className="product-card-body">
+                  <div className="product-stat">
+                    <div className="product-stat-label">Daily Income</div>
+                    <div className="product-stat-value">ETB {product.daily_income.toLocaleString()}</div>
+                  </div>
+                  <div className="product-stat">
+                    <div className="product-stat-label">Total Return</div>
+                    <div className="product-stat-value">ETB {product.total_income.toLocaleString()}</div>
+                  </div>
+                  <div className="product-stat">
+                    <div className="product-stat-label">Duration</div>
+                    <div className="product-stat-value">{product.validity_days} Days</div>
+                  </div>
+                </div>
+                <div className="product-card-footer">
+                  <div className="product-price">
+                    ETB {product.price.toLocaleString()}
+                    <span> /lease</span>
+                  </div>
+                  <button
+                    id={`buy-vip${product.tier_level}-btn`}
+                    className="btn-buy"
+                    onClick={() => handleBuy(product)}
+                    disabled={buyingId === product.id}
+                  >
+                    {buyingId === product.id ? '...' : 'Lease Now'}
+                  </button>
                 </div>
               </div>
-              <div className="product-card-body">
-                <div className="product-stat">
-                  <div className="product-stat-label">Daily Income</div>
-                  <div className="product-stat-value">ETB {product.daily_income.toLocaleString()}</div>
-                </div>
-                <div className="product-stat">
-                  <div className="product-stat-label">Total Return</div>
-                  <div className="product-stat-value">ETB {product.total_income.toLocaleString()}</div>
-                </div>
-                <div className="product-stat">
-                  <div className="product-stat-label">Duration</div>
-                  <div className="product-stat-value">{product.validity_days} Days</div>
-                </div>
-              </div>
-              <div className="product-card-footer">
-                <div className="product-price">
-                  ETB {product.price.toLocaleString()}
-                  <span> /lease</span>
-                </div>
-                <button
-                  id={`buy-vip${product.tier_level}-btn`}
-                  className="btn-buy"
-                  onClick={() => handleBuy(product)}
-                  disabled={buyingId === product.id}
-                >
-                  {buyingId === product.id ? '...' : 'Lease Now'}
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
