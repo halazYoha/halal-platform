@@ -1254,10 +1254,9 @@ function renderAuthModal() {
       <!-- FORM -->
       <div class="space-y-3">
         <div class="space-y-1">
-          <label class="text-[11px] font-bold text-gray-300">Phone Number</label>
+          <label class="text-[11px] font-bold text-gray-300">${state.authMode === 'login' ? 'Phone Number or Admin Username' : 'Phone Number'}</label>
           <div class="flex items-center bg-[#101219] border border-[#252838] rounded-xl px-3 py-2.5">
-            <span class="text-xs font-bold text-[#00C853] mr-2">+251</span>
-            <input type="tel" id="auth-phone" placeholder="9XXXXXXXX" class="bg-transparent text-xs text-white outline-none w-full font-mono">
+            <input type="text" id="auth-phone" placeholder="${state.authMode === 'login' ? 'e.g. 09XXXXXXXX or admin' : '09XXXXXXXX'}" class="bg-transparent text-xs text-white outline-none w-full font-mono">
           </div>
         </div>
 
@@ -1280,12 +1279,6 @@ function renderAuthModal() {
         <button onclick="handleAuthSubmit()" id="auth-submit-btn" class="w-full py-3 bg-[#00C853] hover:bg-[#009624] text-black font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-500/25 active:scale-95 transition mt-2">
           ${state.authMode === 'login' ? 'Sign In Now' : 'Create Account'}
         </button>
-
-        ${state.authMode === 'login' ? `
-          <button onclick="useQuickDemoLogin()" class="w-full py-2 bg-[#1d212e] hover:bg-[#252b3d] text-gray-300 text-[11px] font-bold rounded-xl border border-[#292e40] transition">
-            Use Demo Account (251 938236272)
-          </button>
-        ` : ''}
       </div>
     </div>
   `;
@@ -1298,14 +1291,16 @@ async function handleAuthSubmit() {
   const referral = document.getElementById('auth-referral')?.value?.trim();
 
   if (!phoneRaw || !password) {
-    showToast('Please enter both phone number and password', 'error');
+    showToast('Please enter both phone number/username and password', 'error');
     return;
   }
 
-  // Format Ethiopian phone
+  // Allow 'admin' or direct alphanumeric usernames without +251 prefix, otherwise format Ethiopian phone
   let phone = phoneRaw;
-  if (!phone.startsWith('251')) {
-    phone = phone.startsWith('0') ? '251' + phone.substring(1) : '251' + phone;
+  if (/^\d+$/.test(phone)) {
+    if (!phone.startsWith('251')) {
+      phone = phone.startsWith('0') ? '251' + phone.substring(1) : '251' + phone;
+    }
   }
 
   const endpoint = state.authMode === 'login' ? '/auth/login' : '/auth/register';
@@ -1332,21 +1327,6 @@ async function handleAuthSubmit() {
   } finally {
     if (btn) btn.disabled = false;
   }
-}
-
-async function useQuickDemoLogin() {
-  try {
-    const res = await api('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ phone: '251938236272', password: '123' })
-    });
-    state.token = res.token;
-    state.user = res.user;
-    localStorage.setItem('halal_token', res.token);
-    closeAuthModal();
-    showToast('Logged in to Demo Account', 'success');
-    render();
-  } catch (e) {}
 }
 
 function logoutUser() {
